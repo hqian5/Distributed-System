@@ -1,75 +1,141 @@
 -module(chemistry).
--export([ch3oh/3, o2/2, ch3o/1, ho2/1, react/2]).
+-export([ch3ohf/3, o2f/2, ch3of/3, ho2f/2, ch3f/1, ho3f/1, react/2]).
 -import(io, [format/1, format/2]).	
 
-ch3oh(0, O2_PID, CH3O_PID) ->
-	O2_PID ! finished,
-	CH3O_PID ! finished,
-	format("ch3oh number: ~w~n", [0]);
-	
-ch3oh(N, O2_PID, CH3O_PID) ->
-	O2_PID ! {h, self()},
-	CH3O_PID ! ch3o,
-	ch3oh(N-1, O2_PID, CH3O_PID).
-	
-o2(0, HO2_PID) ->
-	HO2_PID ! finished,
-	
-	receive
+ch3ohf(0, o2, ch3o) ->
+	receive 
 		finished ->
-			format("O2 number: ~w~n", [0])
+			format("ch3oh number: ~w~n", [0])
 	end;
 	
-o2(N, HO2_PID) ->
-	receive
+ch3ohf(N, o2, ch3o) ->	
+	o2 ! request,
+	
+	receive 
 		finished ->
-			format("O2 number: ~w~n", [N]),
-			HO2_PID ! finished;
-			
-		{h, CH3OH_PID} ->
-			HO2_PID ! ho2,
-			o2(N-1, HO2_PID)
+			format("CH3OH number: ~w~n", [N]);
+		
+		no ->
+			ch3ohf(N, o2, ch3o);
+		
+		ok ->
+			o2 ! add_h,
+			ch3o ! add_ch3o,
+			ch3ohf(N -1, o2, ch3o)	
 	end.
 	
-ch3o(0) ->
+o2f(0, ho2) ->
+	receive
+		finished ->
+			format("O2 number: ~w~n", [0]);
+			
+		request ->
+			ch3oh ! no,
+			o2f(0, ho2)
+	end;
+	
+o2f(N, ho2) ->
+	receive
+		finished ->
+			format("O2 number: ~w~n", [N]);
+			
+		request ->
+			ch3oh ! ok,
+			o2f(N, ho2);
+		
+		add_h ->
+			ho2 ! add_ho2,
+			o2f(N - 1, ho2)
+	end.
+	
+ch3of(0, ho2, ch3) ->
 	receive
 		finished ->
 			format("CH3O number: ~w~n", [0]);
 			
-		ch3o ->
-			ch3o(1)
+		add_ch3o ->
+			ch3of(1, ho2, ch3)
 	end;
 
-ch3o(N) ->
+ch3of(N, ho2, ch3) ->
+	ho2 ! add_o,
+	ch3 ! add_ch3,
+	ch3of(N - 1, ho2, ch3),
+	
 	receive
 		finished ->
 			format("CH3O number: ~w~n", [N]);
 			
-		ch3o ->
-			ch3o(N + 1)
+		add_ch3o ->
+			ch3of(N + 1, ho2, ch3)			
 	end.
 
-ho2(0) ->
+ho2f(0, ho3) ->
 	receive
 		finished ->
-			format("HO2 number: ~w~n", [0]);
+			format("ho2 number: ~w~n", [0]);
 			
-		ho2 ->
-			ho2(1)
+		add_ho2 ->
+			ho2f(1, ho3)
+			
 	end;
 
-ho2(N) ->
+ho2f(N, ho3) ->	
 	receive 
 		finished ->
-			format("HO2 number: ~w~n", [N]);
+			format("ho2 number: ~w~n", [N]);
 			
-		ho2 ->
-			ho2(N + 1)
+		add_o ->
+			ho3 ! add_ho3,
+			ho2f(N - 1, ho3)
 	end.
 			
+
+ch3f(0) ->
+	receive
+		finished ->
+			format("CH3 number: ~w~n", [0]);
+			
+		add_ch3 ->
+			ch3f(1)
+	end;
+
+ch3f(N) ->
+	receive
+		finished ->
+			format("CH3 number: ~w~n", [N]);
+			
+		add_ch3 ->
+			ch3f(N + 1)
+	end.
+
+ho3f(0) ->
+	receive 
+		finished ->
+			format("HO3 number: ~w~n", [0]);
+			
+		add_ho3 ->
+			ho3f(1)
+	end;
+	
+ho3f(N) ->
+	receive
+		finished ->
+			format("HO3 number: ~w~n", [N]);
+			
+		add_ho3 ->
+			ho3f(N + 1)
+	end.
 	
 react(X,Y) ->
-	HO2_PID = spawn(chemistry, ho2, [0]),
-	CH3O_PID = spawn(chemistry, ch3o, [0]),
-	O2_PID = spawn(chemistry, o2, [Y, HO2_PID]),
-	spawn(chemistry, ch3oh, [X, O2_PID, CH3O_PID]).
+	register(ch3, spawn(chemistry, ch3f, [0])),
+	register(ho3, spawn(chemistry, ho3f, [0])),
+	register(ho2, spawn(chemistry, ho2f, [0, ho3])),
+	register(ch3o, spawn(chemistry, ch3of, [0, ho2, ch3])),
+	register(o2, spawn(chemistry, o2f, [Y, ho2])),
+	register(ch3oh, spawn(chemistry, ch3ohf, [X, o2, ch3o])),
+	receive
+		after 3000 ->
+			ch3 ! ho3 ! ch3o ! ho2 ! o2 ! ch3oh ! finished 
+	end.
+	
