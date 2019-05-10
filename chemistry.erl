@@ -1,5 +1,5 @@
 -module(chemistry).
--export([ch3ohf/3, o2f/5, ch3of/3, ho2f/2, ch3f/3, ho3f/3, co2f/1, h3f/3, h2f/1, h2o3f/1, react/2]).
+-export([ch3ohf/3, o2f/5, ch3of/3, ho2f/2, ch3f/5, ho3f/3, co2f/1, h3f/3, h2f/3, h2o3f/3, h2o2f/3, h2of/1, react/2]).
 -import(io, [format/1, format/2]).	
 
 ch3ohf(0, o2, ch3o) ->
@@ -85,7 +85,7 @@ ch3of(N, ho2, ch3) ->
 ho2f(0, ho3) ->
 	receive
 		finished ->
-			format("ho2 number: ~w~n", [0]);
+			format("HO2 number: ~w~n", [0]);
 			
 		add_ho2 ->
 			ho2f(1, ho3)
@@ -95,7 +95,7 @@ ho2f(0, ho3) ->
 ho2f(N, ho3) ->	
 	receive 
 		finished ->
-			format("ho2 number: ~w~n", [N]);
+			format("HO2 number: ~w~n", [N]);
 			
 		add_o ->
 			ho3 ! add_ho3,
@@ -103,16 +103,20 @@ ho2f(N, ho3) ->
 	end.
 			
 
-ch3f(0, o2, h3) ->
+ch3f(0, o2, h3, h2o2, ch3o) ->
 	receive
 		finished ->
 			format("CH3 number: ~w~n", [0]);
 			
 		add_ch3 ->
-			ch3f(1, o2, h3)
+			ch3f(1, o2, h3, h2o2, ch3o);
+		
+		h2o2_request ->
+			h2o2 ! no_h2o2,
+			ch3f(0, o2, h3, h2o2, ch3o)
 	end;
 
-ch3f(N, o2, h3) ->
+ch3f(N, o2, h3, h2o2, ch3o) ->
 	o2 ! ch3_request,
 	
 	receive
@@ -120,15 +124,23 @@ ch3f(N, o2, h3) ->
 			format("CH3 number: ~w~n", [N]);
 			
 		add_ch3 ->
-			ch3f(N + 1, o2, h3);
+			ch3f(N + 1, o2, h3, h2o2, ch3o);
 			
 		no_ch3 ->
-			ch3f(N, o2, h3);
+			ch3f(N, o2, h3, h2o2, ch3o);
 		
 		ok_ch3 ->
 			o2 ! c,
 			h3 ! add_h3,
-			ch3f(N - 1, o2, h3)
+			ch3f(N - 1, o2, h3, h2o2, ch3o);
+		
+		h2o2_request ->
+			h2o2 ! ok_h2o2,
+			ch3f(N, o2, h3, h2o2, ch3o);
+		
+		add_o ->
+			ch3o ! add_ch3o,
+			ch3f(N -1, o2, h3, h2o2, ch3o)
 	end.
 
 ho3f(0, h3, h2o3) ->
@@ -207,50 +219,116 @@ h3f(N, ho3, h2) ->
 			h3f(N - 1, ho3, h2)
 	end.
 
-h2f(0) ->
+h2f(0, h2o3, h2o) ->
 	receive
 		finished ->
 			format("H2 number: ~w~n", [0]);
 			
 		add_h2 ->
-			h2f(1)
+			h2f(1, h2o3, h2o);
+			
+		h2o3_request ->
+			no_h2o3,
+			h2f(0, h2o3, h2o)
 	end;
 	
-h2f(N) ->
-
+h2f(N, h2o3, h2o) ->
 	receive
 		finished ->
 			format("H2 number: ~w~n", [N]);
 			
 		add_h2 ->
-			h2f(N + 1)
+			h2f(N + 1, h2o3, h2o);
+		
+		h2o3_request ->
+			h2o3 ! ok_h2o3,
+			h2f(N, h2o3, h2o);
+		
+		add_o ->
+			h2o ! add_h2o,
+			h2f(N -1, h2o3, h2o)
 	end.
 
-h2o3f(0) ->
+h2o3f(0, h2, h2o2) ->
 	receive
 		finished ->
 			format("H2O3 number: ~w~n", [0]);
 		
 		add_h2o3 ->
-			h2o3f(1)
+			h2o3f(1, h2, h2o2)
 	end;
 
-h2o3f(N) ->
+h2o3f(N, h2, h2o2) ->
+	h2 ! h2o3_request,
+
 	receive 
 		finished ->
 			format("H2O3 number: ~w~n", [N]);
 			
 		add_h2o3 ->
-			h2o3f(N + 1)
-	end.
+			h2o3f(N + 1, h2, h2o2);
 		
+		ok_h2o3 ->
+			h2 ! add_o,
+			h2o2 ! add_h2o2,
+			h2o3f(N - 1, h2, h2o2)
+	end.
+
+h2o2f(0, ch3, h2o) ->
+	receive
+		finished ->
+			format("H2O2 number: ~w~n", [0]);
+		
+		add_h2o2 ->
+			h2o2f(1, ch3, h2o)
+	end;
+	
+h2o2f(N, ch3, h2o) ->
+	ch3 ! h2o2_request,
+	
+	receive 
+		finished ->
+			format("H2O2 number: ~w~n", [N]);
+			
+		add_h2o2 ->
+			h2o2f(N + 1, ch3, h2o);
+		
+		no_h2o2 ->
+			h2o2f(N, ch3, h2o);
+		
+		ok_h2o2 ->
+			ch3 ! add_o,
+			h2o ! add_h2o,
+			h2o2f(N - 1, ch3, h2o)
+	end.
+	
+h2of(0) ->
+	receive
+		finished ->
+			format("H2O number: ~w~n", [0]);
+			
+		add_h2o ->
+			h2of(1)	
+	end;
+	
+h2of(N) ->
+	receive
+		finished ->
+			format("H2O number: ~w~n", [N]);
+		
+		add_h2o ->
+			h2of(N + 1)
+	end.
+
 react(X,Y) ->
 
-	register(h2o3, spawn(chemistry, h2o3f, [0])),
-	register(h2, spawn(chemistry, h2f, [0])),
+	register(h2o, spawn(chemistry, h2of, [0])),
+	register(h2o2, spawn(chemistry, h2o2f, [0, ch3, h2o])),
+	register(h2o3, spawn(chemistry, h2o3f, [0, h2, h2o2])),
+	register(h2, spawn(chemistry, h2f, [0, h2o3, h2o])),
 	register(h3, spawn(chemistry, h3f, [0, ho3, h2])),
 	register(co2, spawn(chemistry, co2f, [0])),
-	register(ch3, spawn(chemistry, ch3f, [0, o2, h3])),
+	register(ch3, spawn(chemistry, ch3f, [0, o2, h3, h2o2, ch3o])),
 	register(ho3, spawn(chemistry, ho3f, [0, h3, h2o3])),
 	register(ho2, spawn(chemistry, ho2f, [0, ho3])),
 	register(ch3o, spawn(chemistry, ch3of, [0, ho2, ch3])),
@@ -259,6 +337,6 @@ react(X,Y) ->
 	
 	receive
 		after 3000 ->
-			h2o3 ! h2 ! h3 ! co2 ! ch3 ! ho3 ! ch3o ! ho2 ! o2 ! ch3oh ! finished 
+			h2o ! h2o2 ! h2o3 ! h2 ! h3 ! co2 ! ch3 ! ho3 ! ch3o ! ho2 ! o2 ! ch3oh ! finished 
 	end.
 	
