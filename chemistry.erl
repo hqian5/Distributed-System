@@ -1,5 +1,5 @@
 -module(chemistry).
--export([ch3ohf/3, o2f/5, ch3of/3, ho2f/2, ch3f/3, ho3f/1, co2f/1, h3f/1, react/2]).
+-export([ch3ohf/3, o2f/5, ch3of/3, ho2f/2, ch3f/3, ho3f/3, co2f/1, h3f/3, h2f/1, h2o3f/1, react/2]).
 -import(io, [format/1, format/2]).	
 
 ch3ohf(0, o2, ch3o) ->
@@ -131,22 +131,34 @@ ch3f(N, o2, h3) ->
 			ch3f(N - 1, o2, h3)
 	end.
 
-ho3f(0) ->
+ho3f(0, h3, h2o3) ->
 	receive 
 		finished ->
 			format("HO3 number: ~w~n", [0]);
 			
 		add_ho3 ->
-			ho3f(1)
+			ho3f(1, h3, h2o3);
+			
+		h3_request ->
+			ho3 ! no_h3,
+			ho3f(0, h3, h2o3)
 	end;
 	
-ho3f(N) ->
+ho3f(N, h3, h2o3) ->
 	receive
 		finished ->
 			format("HO3 number: ~w~n", [N]);
 			
 		add_ho3 ->
-			ho3f(N + 1)
+			ho3f(N + 1, h3, h2o3);
+			
+		h3_request ->
+			h3 ! ok_h3,
+			ho3f(N, h3, h2o3);
+		
+		add_h ->
+			h2o3 ! add_h2o3,
+			ho3f(N - 1, h3, h2o3)
 	end.
 
 co2f(0) ->
@@ -167,30 +179,79 @@ co2f(N) ->
 			co2f(N + 1)
 	end.
 	
-h3f(0) ->
+h3f(0, ho3, h2) ->
 	receive
 		finished ->
 			format("H3 number: ~w~n", [0]);
 			
 		add_h3 ->
-			h3f(1)
+			h3f(1, ho3, h2)
 	end;
 	
-h3f(N) ->
+h3f(N, ho3, h2) ->
+	ho3 ! h3_request,
+	
 	receive
 		finished ->
 			format("H3 number: ~w~n", [N]);
 			
 		add_h3 ->
-			h3f(N + 1)
+			h3f(N + 1, ho3, h2);
+			
+		no_h3 ->
+			ho3f(N, ho3, h2);
+			
+		ok_h3 ->
+			ho3 ! add_h,
+			h2 ! add_h2,
+			h3f(N - 1, ho3, h2)
 	end.
 
+h2f(0) ->
+	receive
+		finished ->
+			format("H2 number: ~w~n", [0]);
+			
+		add_h2 ->
+			h2f(1)
+	end;
 	
+h2f(N) ->
+
+	receive
+		finished ->
+			format("H2 number: ~w~n", [N]);
+			
+		add_h2 ->
+			h2f(N + 1)
+	end.
+
+h2o3f(0) ->
+	receive
+		finished ->
+			format("H2O3 number: ~w~n", [0]);
+		
+		add_h2o3 ->
+			h2o3f(1)
+	end;
+
+h2o3f(N) ->
+	receive 
+		finished ->
+			format("H2O3 number: ~w~n", [N]);
+			
+		add_h2o3 ->
+			h2o3f(N + 1)
+	end.
+		
 react(X,Y) ->
-	register(h3, spawn(chemistry, h3f, [0])),
+
+	register(h2o3, spawn(chemistry, h2o3f, [0])),
+	register(h2, spawn(chemistry, h2f, [0])),
+	register(h3, spawn(chemistry, h3f, [0, ho3, h2])),
 	register(co2, spawn(chemistry, co2f, [0])),
 	register(ch3, spawn(chemistry, ch3f, [0, o2, h3])),
-	register(ho3, spawn(chemistry, ho3f, [0])),
+	register(ho3, spawn(chemistry, ho3f, [0, h3, h2o3])),
 	register(ho2, spawn(chemistry, ho2f, [0, ho3])),
 	register(ch3o, spawn(chemistry, ch3of, [0, ho2, ch3])),
 	register(o2, spawn(chemistry, o2f, [Y, ho2, ch3oh, ch3, co2])),
@@ -198,6 +259,6 @@ react(X,Y) ->
 	
 	receive
 		after 3000 ->
-			h3 ! co2 ! ch3 ! ho3 ! ch3o ! ho2 ! o2 ! ch3oh ! finished 
+			h2o3 ! h2 ! h3 ! co2 ! ch3 ! ho3 ! ch3o ! ho2 ! o2 ! ch3oh ! finished 
 	end.
 	
